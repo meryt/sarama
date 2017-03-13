@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/satori/go.uuid"
 	"github.com/Shopify/sarama"
 	"github.com/rcrowley/go-metrics"
 )
@@ -22,6 +23,7 @@ var (
 	verbose     = flag.Bool("verbose", false, "Turn on sarama logging to stderr")
 	showMetrics = flag.Bool("metrics", false, "Output metrics on successful publish to stderr")
 	silent      = flag.Bool("silent", false, "Turn off printing the message's topic, partition, and offset to stdout")
+	uuidKeys    = flag.Bool("uuid-keys", false, "Expect string UUIDs as keys, but serialize as UUID bytes")
 
 	logger = log.New(os.Stderr, "", log.LstdFlags)
 )
@@ -44,6 +46,7 @@ func main() {
 	config := sarama.NewConfig()
 	config.Producer.RequiredAcks = sarama.WaitForAll
 	config.Producer.Return.Successes = true
+	config.Version = sarama.V0_10_1_0
 
 	switch *partitioner {
 	case "":
@@ -68,7 +71,12 @@ func main() {
 	message := &sarama.ProducerMessage{Topic: *topic, Partition: int32(*partition)}
 
 	if *key != "" {
-		message.Key = sarama.StringEncoder(*key)
+		if *uuidKeys {
+			message.Key = UUIDEncoder(*key)
+		} else {
+			message.Key = sarama.StringEncoder(*key)
+		}
+
 	}
 
 	if *value != "" {
@@ -121,4 +129,16 @@ func printUsageErrorAndExit(message string) {
 func stdinAvailable() bool {
 	stat, _ := os.Stdin.Stat()
 	return (stat.Mode() & os.ModeCharDevice) == 0
+}
+
+// UUID encoder expects a String-encoded UUID and encodes it to its consitutent bytes
+type UUIDEncoder string
+
+func (s UUIDEncoder) Encode() ([]byte, error) {
+    myUuid, _ := uuid.FromString(string(s))
+    return myUuid.Bytes(), nil
+}
+
+func (s UUIDEncoder) Length() int {
+    return 16
 }
